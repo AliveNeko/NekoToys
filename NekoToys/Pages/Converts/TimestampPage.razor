@@ -1,0 +1,146 @@
+@page "/Converts/Timestamp"
+@using NekoToys.DevToys.Helpers
+@using Serilog
+
+<PageContainer Title="Unix 时间戳转换工具">
+    <GridRow Gutter="(16, 24)">
+        <GridCol Span="3">
+            <Button Style="display: inline-block"
+                    OnClick="@(_ => ResetSelectedTimeZone())">
+                重置为当前时区
+            </Button>
+        </GridCol>
+        <GridCol Span="21">
+            <Select TItem="Zone"
+                    TItemValue="string"
+                    DataSource="_zoneList"
+                    LabelName="@(nameof(Zone.Label))"
+                    ValueName="@(nameof(Zone.Value))"
+                    @bind-value="_selectedTimeZone"
+                    OnSelectedItemChanged="@(_ => OnSelectedTimeZoneChange())">
+            </Select>
+        </GridCol>
+    </GridRow>
+    <Card Style="margin-top: 8px">
+        <GridRow Gutter="(16, 24)">
+            <GridCol Span="24">
+                <GridRow Gutter="(8, 8)">
+                    <GridCol Span="8">
+                        偏移量
+                    </GridCol>
+                    <GridCol Span="4">
+                        @(_offset)
+                    </GridCol>
+                    <GridCol Span="8">
+                        UTC 时间戳
+                    </GridCol>
+                    <GridCol Span="4">
+                        @(UtcTricks)
+                    </GridCol>
+                </GridRow>
+                <GridRow Gutter="(8, 8)">
+                    <GridCol Span="8">
+                        当地日期和时间
+                    </GridCol>
+                    <GridCol Span="4">
+                        @(LocalTime.ToString("yyyy/MM/dd HH:mm:ss"))
+                    </GridCol>
+                    <GridCol Span="8">
+                        世界标准时间 (UTC)
+                    </GridCol>
+                    <GridCol Span="4">
+                        @(UtcTime.ToString("yyyy/MM/dd HH:mm:ss"))
+                    </GridCol>
+                </GridRow>
+            </GridCol>
+        </GridRow>
+    </Card>
+    <GridRow Gutter="(16, 24)" Style="margin-top: 8px">
+        <GridCol Span="9">
+            时间戳
+        </GridCol>
+        <GridCol Span="9">
+            <Space Style="float: right">
+                <SpaceItem>
+                    <Button OnClick="@(_ => OnCurrentTimeClick())">当前时间</Button>
+                </SpaceItem>
+                <SpaceItem>
+                    <Button>粘贴</Button>
+                </SpaceItem>
+                <SpaceItem>
+                    <Button>复制</Button>
+                </SpaceItem>
+            </Space>
+        </GridCol>
+    </GridRow>
+</PageContainer>
+
+@code {
+    private readonly IReadOnlyDictionary<string, string> _timeZones = TimestampToolHelper.ZoneInfo.TimeZones;
+    private readonly IReadOnlyDictionary<string, TimeZoneInfo> _timeZoneInfoDict = TimestampToolHelper.ZoneInfo.TimeZoneInfos;
+
+    private List<Zone> _zoneList = default!;
+
+    private string _selectedTimeZone = string.Empty;
+
+    private string _offset = string.Empty;
+
+    private DateTime _now = DateTime.Now;
+    private DateTime _utcNow = DateTime.UtcNow;
+
+    private long UtcTricks => _utcNow.Ticks;
+    private DateTime LocalTime => _now;
+    private DateTime UtcTime => _utcNow;
+
+    protected override void OnInitialized()
+    {
+        _zoneList = _timeZones.Select(x => new Zone()
+        {
+            Label = x.Key,
+            Value = x.Value,
+        })
+            .ToList();
+        ResetSelectedTimeZone();
+    }
+
+    private void ResetSelectedTimeZone()
+    {
+        _selectedTimeZone = TimeZoneInfo.Local.Id;
+        OnSelectedTimeZoneChange();
+    }
+
+    private void OnSelectedTimeZoneChange()
+    {
+        Log.Debug("OnSelectedTimeZoneChange Invoke");
+        var zone = _timeZoneInfoDict.GetValueOrDefault(_selectedTimeZone);
+        if (zone is not null)
+        {
+            var hours = (int)zone.BaseUtcOffset.TotalHours;
+            _offset = hours != 0
+                ? $"{(hours > 0 ? "+" : "-")} {Math.Abs(hours)}:00"
+                : "0:00";
+        }
+        else
+        {
+            _offset = string.Empty;
+        }
+    }
+
+    private void OnCurrentTimeClick()
+    {
+        _now = DateTime.Now;
+        _utcNow = DateTime.UtcNow;
+    }
+
+    private struct Zone
+    {
+        public string Label { get; set; }
+        public string Value { get; set; }
+
+        public override string ToString()
+        {
+            return $"{nameof(Label)}: {Label}, {nameof(Value)}: {Value}";
+        }
+    }
+
+}

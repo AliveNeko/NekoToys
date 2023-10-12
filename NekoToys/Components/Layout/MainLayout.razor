@@ -1,0 +1,45 @@
+﻿@inherits LayoutComponentBase
+
+<AntDesign.ProLayout.BasicLayout
+    Logo="@("./icon/Logo.svg")"
+    Title="NekoToys"
+    MenuData="@_menuData">
+    <ChildContent>
+        @Body
+    </ChildContent>
+    <FooterRender>
+        <FooterView Copyright="2021 Ant Design Blazor"></FooterView>
+    </FooterRender>
+</AntDesign.ProLayout.BasicLayout>
+
+@code
+{
+    private readonly MenuDataItem[] _menuData = new MenuDataItem[]
+    {
+        new()
+        {
+            Path = "/",
+            Name = "首页",
+            Icon = "home",
+        },
+        new()
+        {
+            Name  = "转换类型工具",
+            Icon = "swap",
+            Children = new MenuDataItem[]
+            {
+                new ()
+                {
+                    Path = "/Converts/JsonYaml",
+                    Name = "Json ←→ Yaml",
+                },
+                new ()
+                {
+                    Path = "/Converts/Timestamp",
+                    Name = "时间戳",
+                }
+            },
+        },
+    };
+
+}

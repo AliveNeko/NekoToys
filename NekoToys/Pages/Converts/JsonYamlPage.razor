@@ -1,0 +1,317 @@
+@page "/Converts/JsonYaml"
+@using Newtonsoft.Json
+@using Newtonsoft.Json.Linq
+@using Serilog
+@using YamlDotNet.Serialization
+@using NekoToys.DevToys.Models
+@using NekoToys.Services
+@using AntDesign.Core.Extensions
+@using NekoToys.DevToys.Helpers.JsonYaml
+@using YamlDotNet.Core
+@using System.Reflection
+
+@inject IClipboardService ClipboardService
+@inject IMessageService MessageService
+
+<PageContainer Title="Json / Yaml 数据类型互转工具">
+    <GridRow Gutter="(16,24)">
+        <GridCol Span="11">
+            <Card>
+                <span>Json缩进</span>
+                <RadioGroup
+                    @bind-Value="@_jsonIndentation"
+                    OnChange="@((Indentation _) => OnJsonIndentationChange())"
+                    DefaultValue="@(Indentation.TwoSpaces)">
+                    <Radio Value="@(Indentation.TwoSpaces)">2个空格</Radio>
+                    <Radio Value="@(Indentation.FourSpaces)">4个空格</Radio>
+                </RadioGroup>
+            </Card>
+        </GridCol>
+        <GridCol Span="2">
+            <Space Direction="DirectionVHType.Vertical" Style="display: block">
+                <SpaceItem>
+                    <Button Block="true" OnClick="@(_ => OnJsonToYamlClick())">→</Button>
+                </SpaceItem>
+                <SpaceItem>
+                    <Button Block="true" OnClick="@(_ => OnYamlToJsonClick())">←</Button>
+                </SpaceItem>
+            </Space>
+        </GridCol>
+        <GridCol Span="11">
+            <Card>
+                <span>Yaml缩进</span>
+                <RadioGroup
+                    @bind-Value="@_yamlIndentation"
+                    OnChange="@((Indentation _) => OnYamlIndentationChange())"
+                    DefaultValue="@(Indentation.TwoSpaces)">
+                    <Radio Value="@(Indentation.TwoSpaces)">2个空格</Radio>
+                    <Radio Value="@(Indentation.FourSpaces)">4个空格</Radio>
+                </RadioGroup>
+            </Card>
+        </GridCol>
+    </GridRow>
+    <GridRow Gutter="(16, 16)">
+        <GridCol Span="12">
+            <Button OnClick="@(_ => OnJsonPasteClick())">粘贴</Button>
+            <InputFile id="jsonFileInput"
+                       OnChange="@(e => OnUploadFile(e, "json"))"
+                       hidden
+                       accept=".txt,.json"/>
+            <Upload Style="display: inline-block">
+                <label class="ant-btn" for="jsonFileInput">
+                    <Icon Type="upload"/>
+                    选择文件
+                </label>
+            </Upload>
+            <Button OnClick="@(async _ => await _jsonEditor.SetValue(""))">清空</Button>
+            <Divider Type="DirectionVHType.Vertical"/>
+            <Button OnClick="@(_ => OnJsonCopyClick())">复制</Button>
+        </GridCol>
+        <GridCol Span="12">
+            <Button OnClick="@(_ => OnYamlPasteClick())">粘贴</Button>
+            <InputFile id="yamlFileInput"
+                       OnChange="@(e => OnUploadFile(e, "yaml"))"
+                       hidden
+                       accept=".txt,.yaml,.yml"/>
+            <Upload Style="display: inline-block">
+                <label class="ant-btn" for="yamlFileInput">
+                    <Icon Type="upload"/>
+                    选择文件
+                </label>
+            </Upload>
+            <Button OnClick="@(_ => _yamlEditor.SetValue(""))">清空</Button>
+            <Divider Type="DirectionVHType.Vertical"/>
+            <Button OnClick="@(_ => OnYamlCopyClick())">复制</Button>
+        </GridCol>
+    </GridRow>
+    <GridRow Gutter="(16, 24)" Style="margin-top: 10px">
+        <GridCol Span="12">
+            <StandaloneCodeEditor
+                Id="json-editor"
+                ConstructionOptions="JsonEditorOptions"
+                CssClass="json-editor"/>
+        </GridCol>
+        <GridCol Span="12">
+            <StandaloneCodeEditor
+                Id="yaml-editor"
+                ConstructionOptions="YamlEditorOptions"
+                CssClass="json-editor"/>
+        </GridCol>
+    </GridRow>
+</PageContainer>
+
+@code {
+
+    private Indentation _jsonIndentation;
+    private Indentation _yamlIndentation;
+
+    private StandaloneCodeEditor _jsonEditor = default!;
+    private StandaloneCodeEditor _yamlEditor = default!;
+
+    private StandaloneEditorConstructionOptions JsonEditorOptions(StandaloneCodeEditor editor)
+    {
+        _jsonEditor = editor;
+        return new StandaloneEditorConstructionOptions
+        {
+            AutomaticLayout = true,
+            Language = "json",
+            TabSize = _jsonIndentation.ToSpaceCount(),
+            InsertSpaces = true,
+        };
+    }
+
+    private StandaloneEditorConstructionOptions YamlEditorOptions(StandaloneCodeEditor editor)
+    {
+        _yamlEditor = editor;
+        return new StandaloneEditorConstructionOptions
+        {
+            AutomaticLayout = true,
+            Language = "yaml",
+            TabSize = _yamlIndentation.ToSpaceCount(),
+            InsertSpaces = true,
+        };
+    }
+
+    private async Task OnJsonIndentationChange()
+    {
+        await _jsonEditor.UpdateOptions(new EditorUpdateOptions
+        {
+            TabSize = _jsonIndentation.ToSpaceCount(),
+        });
+
+        var value = await _jsonEditor.GetValue();
+
+        var json = FormatJson(value, _jsonIndentation.ToSpaceCount());
+
+        if (json is not null)
+        {
+            await _jsonEditor.SetValue(json);
+        }
+    }
+
+    private async Task OnYamlIndentationChange()
+    {
+        await _yamlEditor.UpdateOptions(new EditorUpdateOptions
+        {
+            TabSize = _yamlIndentation.ToSpaceCount(),
+        });
+
+        var value = await _yamlEditor.GetValue();
+
+        var yaml = FormatYaml(value, _yamlIndentation.ToSpaceCount());
+
+        if (yaml is not null)
+        {
+            await _yamlEditor.SetValue(yaml);
+        }
+    }
+
+    private async Task OnUploadFile(InputFileChangeEventArgs e, string type)
+    {
+        foreach (var multipleFile in e.GetMultipleFiles())
+        {
+            Log.Information("{fileName}", multipleFile.Name);
+            using var reader = new StreamReader(multipleFile.OpenReadStream());
+
+            var text = await reader.ReadToEndAsync();
+
+            switch (type)
+            {
+                case "json":
+                {
+                    await _jsonEditor.SetValue(text);
+                    break;
+                }
+                case "yaml":
+                {
+                    await _yamlEditor.SetValue(text);
+                    break;
+                }
+                default:
+                    return;
+            }
+        }
+    }
+
+    private string? FormatJson(string jsonStr, int indentation)
+    {
+        if (string.IsNullOrWhiteSpace(jsonStr))
+        {
+            return null;
+        }
+
+        using var stringWriter = new StringWriter();
+        using var jsonWriter = new JsonTextWriter(stringWriter);
+
+        jsonWriter.Formatting = Formatting.Indented;
+        jsonWriter.Indentation = indentation;
+        jsonWriter.IndentChar = ' ';
+        JObject jObj;
+        try
+        {
+            jObj = JObject.Parse(jsonStr);
+        }
+        catch (Exception e)
+        {
+            Log.Error("{error}", e);
+            return null;
+        }
+        jObj.WriteTo(jsonWriter);
+
+        return stringWriter.ToString();
+    }
+
+    private string? FormatYaml(string yaml, int indentation)
+    {
+        if (string.IsNullOrWhiteSpace(yaml))
+        {
+            return null;
+        }
+        var deserializer = new DeserializerBuilder().Build();
+        var yamlObject = deserializer.Deserialize(yaml);
+
+        var builder = new SerializerBuilder();
+        
+        var emitterSettingsField = typeof(SerializerBuilder).GetField("emitterSettings", BindingFlags.NonPublic | BindingFlags.Instance);
+        if (emitterSettingsField is not null)
+        {
+            var emitSettings = EmitterSettings.Default
+                .WithBestIndent(indentation);
+            emitterSettingsField.SetValue(builder, emitSettings);
+        }
+
+        var serializer = builder
+            .WithIndentedSequences()
+            .Build();
+
+        return serializer.Serialize(yamlObject);
+    }
+
+    private async Task OnJsonToYamlClick()
+    {
+        var jsonStr = await _jsonEditor.GetValue();
+
+        if (JsonHelper.IsValid(jsonStr))
+        {
+            var yamlStr = YamlHelper.ConvertFromJson(jsonStr, _yamlIndentation);
+            await _yamlEditor.SetValue(yamlStr);
+        }
+        else
+        {
+            await MessageService.Error("json 字符串格式不正");
+        }
+    }
+
+    private async Task OnYamlToJsonClick()
+    {
+        var yamlStr = await _yamlEditor.GetValue();
+        if (YamlHelper.IsValidYaml(yamlStr))
+        {
+            var jsonStr = JsonHelper.ConvertFromYaml(yamlStr, _jsonIndentation);
+            await _jsonEditor.SetValue(jsonStr);
+        }
+        else
+        {
+            await MessageService.Error("yaml 字符串格式不正");
+        }
+    }
+
+    private async Task OnJsonPasteClick()
+    {
+        var text = await ClipboardService.PasteTextFromClipboard();
+        await _jsonEditor.SetValue(text);
+    }
+
+    private async Task OnJsonCopyClick()
+    {
+        var text = await _jsonEditor.GetValue();
+
+        if (text is not null)
+        {
+            await ClipboardService.CopyTextToClipboard(text);
+        }
+    }
+
+    private async Task OnYamlPasteClick()
+    {
+        var text = await ClipboardService.PasteTextFromClipboard();
+        await _yamlEditor.SetValue(text);
+    }
+
+    private async Task OnYamlCopyClick()
+    {
+        var text = await _yamlEditor.GetValue();
+
+        if (text is not null)
+        {
+            await ClipboardService.CopyTextToClipboard(text);
+        }
+    }
+
+}
+
+<style>
+    .monaco-editor-container {
+        height: 70vh;
+    }
+</style>
